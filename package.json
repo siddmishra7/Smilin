@@ -8,11 +8,11 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate"
-
   },
   "dependencies": {
     "@clerk/nextjs": "^6.24.0",
     "@prisma/client": "^6.11.1",
+    "ably": "^2.10.0",
     "date-fns": "^4.1.0",
     "lucide": "^0.525.0",
     "lucide-react": "^0.525.0",

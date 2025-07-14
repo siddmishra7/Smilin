@@ -9,7 +9,7 @@ import {
   UserButton,
 } from '@clerk/nextjs';
 import ChatBox from '@/app/components/ChatBox';
-import { io, Socket } from 'socket.io-client';
+import Ably from 'ably';
 
 type User = {
   id: string;
@@ -17,27 +17,19 @@ type User = {
   imageUrl: string;
 };
 
-let socket: Socket | null = null;
-
-function connectSocket(userId: string): Socket {
-  if (!socket) {
-    socket = io('/', {
-      path: '/socket.io',
-      auth: { userId },
-    });
-  }
-  return socket;
+function getAblyClient(apiKey: string, clientId: string) {
+  return new Ably.Realtime({ key: apiKey, clientId });
 }
 
 export default function ChatPageClient({ peerId }: { peerId: string }) {
   const { isLoaded, user } = useUser();
   const [peerUser, setPeerUser] = useState<User | null>(null);
-  const [onlineIds, setOnlineIds] = useState<string[]>([]);
-  const [socketState, setSocket] = useState<Socket | null>(null);
+  const [ablyChannel, setAblyChannel] = useState<Ably.RealtimeChannel | null>(null);
 
-  useEffect(() => {
-    fetch('/api/socket');
-  }, []);
+  // Online users tracked here:
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+
+  const ABLY_API_KEY = process.env.NEXT_PUBLIC_ABLY_API_KEY || '';
 
   useEffect(() => {
     const fetchPeerUser = async () => {
@@ -51,18 +43,63 @@ export default function ChatPageClient({ peerId }: { peerId: string }) {
   }, [peerId]);
 
   useEffect(() => {
-    if (isLoaded && user) {
-      const socketInstance = connectSocket(user.id);
-      setSocket(socketInstance);
-      socketInstance.on('online-users', (ids: string[]) => {
-        setOnlineIds(ids);
-      });
+    if (!isLoaded || !user || !ABLY_API_KEY) return;
 
-      return () => {
-        socketInstance.off('online-users');
-      };
-    }
-  }, [isLoaded, user]);
+    const clientId = `${user.id}-${Math.random().toString(36).slice(2, 8)}`;
+    const client = getAblyClient(ABLY_API_KEY, clientId);
+
+    // Channel for chat messages between this user and peer
+    const channelName = [user.id, peerId].sort().join(':');
+    const channel = client.channels.get(channelName);
+    setAblyChannel(channel);
+
+    // Presence channel to track who's online (global presence)
+    const presenceChannel = client.channels.get('global-presence');
+
+    client.connection.once('connected', () => {
+      // Enter presence on the presence channel (mark yourself online)
+      presenceChannel.presence.enter({ userId: user.id, timestamp: Date.now() }).catch(console.error);
+    });
+
+    // Subscribe to presence updates
+    presenceChannel.presence.subscribe((presenceMsg) => {
+      setOnlineUserIds((prev) => {
+        const updated = new Set(prev);
+        const onlineUserId = presenceMsg.clientId.split('-')[0]; // strip random suffix
+
+        if (presenceMsg.action === 'enter' || presenceMsg.action === 'update') {
+          updated.add(onlineUserId);
+        } else if (presenceMsg.action === 'leave' || presenceMsg.action === 'absent') {
+          updated.delete(onlineUserId);
+        }
+        return updated;
+      });
+    });
+
+    (async () => {
+      try {
+        const members = await presenceChannel.presence.get();
+        const currentOnline = new Set<string>();
+        members.forEach((member) => {
+          currentOnline.add(member.clientId.split('-')[0]);
+        });
+        setOnlineUserIds(currentOnline);
+      } catch (err) {
+        console.error('Error getting presence members:', err);
+      }
+    })();
+
+    return () => {
+      presenceChannel.presence.leave().catch(console.error);
+      presenceChannel.presence.unsubscribe();
+      channel.detach();
+      client.close();
+      setAblyChannel(null);
+      setOnlineUserIds(new Set());
+    };
+  }, [isLoaded, user, peerId, ABLY_API_KEY]);
+
+  const peerIsOnline = onlineUserIds.has(peerId);
 
   if (!isLoaded) return <div>Loading...</div>;
 
@@ -81,13 +118,10 @@ export default function ChatPageClient({ peerId }: { peerId: string }) {
                 <div className="flex flex-col">
                   <h1 className="text-lg font-semibold">{peerUser.fullName}</h1>
                   <p
-                    className={`text-sm ${
-                      onlineIds.includes(peerId)
-                        ? 'text-green-400'
-                        : 'text-gray-300'
-                    }`}
+                    className={`text-sm ${peerIsOnline ? 'text-green-400' : 'text-gray-500'
+                      } font-medium`}
                   >
-                    {onlineIds.includes(peerId) ? 'Online' : 'Offline'}
+                    {peerIsOnline ? 'Online' : 'Offline'}
                   </p>
                 </div>
               </>
@@ -107,13 +141,13 @@ export default function ChatPageClient({ peerId }: { peerId: string }) {
           </header>
 
           <div className="flex grow overflow-hidden">
-            {socketState ? (
+            {ablyChannel ? (
               <ChatBox
                 userId={user!.id}
                 username={user!.fullName || 'Anonymous'}
                 avatarUrl={user!.imageUrl || '/default-avatar.png'}
                 peerId={peerId}
-                socket={socketState}
+                ablyChannel={ablyChannel}
               />
             ) : (
               <div className="flex grow items-center justify-center text-gray-400 italic">

@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useUser, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { createSocket, disconnectSocket } from './lib/socketClient';
-import { SmileIcon } from 'lucide-react';
+import Ably from 'ably';
 
 type User = {
   id: string;
@@ -12,35 +11,59 @@ type User = {
   imageUrl: string;
 };
 
+function getUniqueClientId(userId: string) {
+  return `${userId}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function HomePage() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
 
   const [users, setUsers] = useState<User[]>([]);
-  const [onlineIds, setOnlineIds] = useState<string[]>([]);
-  const [, setSocket] = useState<ReturnType<typeof createSocket> | null>(null);
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
+  const [ablyClient, setAblyClient] = useState<Ably.Realtime | null>(null);
+  // presenceChannel typed as RealtimeChannel because presence is a property on it
+  const [presenceChannel, setPresenceChannel] = useState<Ably.RealtimeChannel | null>(null);
 
   useEffect(() => {
-    fetch('/api/socket');
-  }, []);
+    if (!isLoaded || !user) return;
 
-  useEffect(() => {
-    if (isLoaded && user) {
-      const socketInstance = createSocket(user.id);
-      setSocket(socketInstance);
+    const clientId = getUniqueClientId(user.id);
+    const client = new Ably.Realtime({
+      key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
+      clientId,
+    });
 
-      socketInstance.on('connect', () => {
-        console.log('✅ Connected to socket server');
+    const channelName = 'global-presence';
+    const channel = client.channels.get(channelName);
+
+    client.connection.once('connected', () => {
+      channel.presence.enter('online').catch(console.error);
+    });
+
+    channel.presence.subscribe((presenceMsg) => {
+      setOnlineIds((prev) => {
+        const newSet = new Set(prev);
+
+        if (presenceMsg.action === 'enter' || presenceMsg.action === 'update') {
+          const rawUserId = presenceMsg.clientId.split('-')[0];
+          newSet.add(rawUserId);
+        } else if (presenceMsg.action === 'leave' || presenceMsg.action === 'absent') {
+          const rawUserId = presenceMsg.clientId.split('-')[0];
+          newSet.delete(rawUserId);
+        }
+        return newSet;
       });
+    });
 
-      socketInstance.on('online-users', (ids: string[]) => {
-        setOnlineIds(ids);
-      });
+    setAblyClient(client);
+    setPresenceChannel(channel);
 
-      return () => {
-        disconnectSocket();
-      };
-    }
+    return () => {
+      channel.presence.leave().catch(console.error);
+      channel.presence.unsubscribe();
+      client.close();
+    };
   }, [isLoaded, user]);
 
   useEffect(() => {
@@ -48,9 +71,9 @@ export default function HomePage() {
 
     const fetchUsers = async () => {
       const res = await fetch('/api/users');
-      const data = await res.json();
+      const data: User[] = await res.json();
       if (user) {
-        setUsers(data.filter((u: User) => u.id !== user.id));
+        setUsers(data.filter((u) => u.id !== user.id));
       } else {
         setUsers(data);
       }
@@ -68,7 +91,7 @@ export default function HomePage() {
       <div className="max-w-4xl mx-auto">
         <SignedIn>
           <header className="flex items-center justify-between mb-8">
-            <h1 className="flex gap-2 items-center text-4xl font-extrabold tracking-tight"><SmileIcon size={36}/> Smilin</h1>
+            <h1 className="text-4xl font-extrabold tracking-tight">Smilin</h1>
             <UserButton />
           </header>
 
@@ -77,7 +100,7 @@ export default function HomePage() {
           ) : (
             <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
               {users.map((u) => {
-                const isOnline = onlineIds.includes(u.id);
+                const isOnline = onlineIds.has(u.id);
                 return (
                   <div
                     key={u.id}
