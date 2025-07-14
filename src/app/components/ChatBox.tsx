@@ -6,6 +6,7 @@ import type { RealtimeChannel, Message } from 'ably';
 import MessageInput from './MessageInput';
 
 type ChatMessage = {
+  messageId: string;         
   fromUserId: string;
   toUserId: string;
   username: string;
@@ -30,7 +31,6 @@ export default function ChatBox({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch historical messages from your API
   useEffect(() => {
     if (!peerId) return;
 
@@ -47,24 +47,19 @@ export default function ChatBox({
     fetchMessages();
   }, [userId, peerId]);
 
-  // Listen for incoming messages on Ably channel
   useEffect(() => {
     if (!ablyChannel) return;
 
-    // Track message IDs to prevent duplicates (if you have unique IDs, else use timestamp+text)
     const receivedMessages = new Set<string>();
 
     const handleMessage = (msg: Message) => {
       const data = msg.data as ChatMessage;
-      // Check that message belongs in this chat
       if (
         (data.fromUserId === userId && data.toUserId === peerId) ||
         (data.fromUserId === peerId && data.toUserId === userId)
       ) {
-        // Create a unique key for the message to avoid duplicates
-        const key = `${data.timestamp}-${data.text}-${data.fromUserId}`;
-        if (!receivedMessages.has(key)) {
-          receivedMessages.add(key);
+        if (!receivedMessages.has(data.messageId)) {
+          receivedMessages.add(data.messageId);
           setMessages((prev) => [...prev, data]);
         }
       }
@@ -77,16 +72,15 @@ export default function ChatBox({
     };
   }, [userId, peerId, ablyChannel]);
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Send message via Ably
   const sendMessage = (text: string) => {
     if (!peerId) return;
 
     const msg: ChatMessage = {
+      messageId: crypto.randomUUID(),  // Generates a unique ID
       fromUserId: userId,
       toUserId: peerId,
       username,
@@ -95,13 +89,11 @@ export default function ChatBox({
       timestamp: new Date().toISOString(),
     };
 
-    ablyChannel.publish('chat-message', msg)
-      .then(() => {
-        setMessages((prev) => [...prev, msg]);
-      })
-      .catch((err) => {
-        console.error('Failed to publish message:', err);
-      });
+    ablyChannel.publish('chat-message', msg).catch((err) => {
+      console.error('Failed to publish message:', err);
+    });
+
+    // Removed setMessages here to avoid duplicates
   };
 
   if (!peerId) {

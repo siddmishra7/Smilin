@@ -21,9 +21,8 @@ export default function HomePage() {
 
   const [users, setUsers] = useState<User[]>([]);
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
-  const [ablyClient, setAblyClient] = useState<Ably.Realtime | null>(null);
-  // presenceChannel typed as RealtimeChannel because presence is a property on it
-  const [presenceChannel, setPresenceChannel] = useState<Ably.RealtimeChannel | null>(null);
+  const [, setAblyClient] = useState<Ably.Realtime | null>(null);
+  const [, setPresenceChannel] = useState<Ably.RealtimeChannel | null>(null);
 
   useEffect(() => {
     if (!isLoaded || !user) return;
