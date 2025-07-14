@@ -5,8 +5,8 @@ import { Inter } from 'next/font/google';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = {
-  title: 'ChatApp',
-  description: 'Realtime chat app with Clerk + Socket.IO',
+  title: 'Smilin',
+  description: 'Realtime chat app, Smilin',
 };
 
 export default function RootLayout({

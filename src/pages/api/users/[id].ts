@@ -9,7 +9,7 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
       orderBy: '-created_at',
     });
 
-    const users = usersResponse.data; // <-- access array here
+    const users = usersResponse.data; 
 
     const filteredUsers = users.map(u => ({
       id: u.id,

@@ -10,7 +10,7 @@ export const setupSocketServer = (server: ExtendedServer) => {
     const io = new Server(server, {
       path: '/socket.io',
       cors: {
-        origin: '*', // adjust to your frontend origin in production!
+        origin: ['https://smilin.vercel.app'],  
       },
     });
 
