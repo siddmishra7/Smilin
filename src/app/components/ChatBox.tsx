@@ -6,7 +6,7 @@ import type { RealtimeChannel, Message } from 'ably';
 import MessageInput from './MessageInput';
 
 type ChatMessage = {
-  messageId: string;         
+  messageId: string;
   fromUserId: string;
   toUserId: string;
   username: string;
@@ -76,11 +76,11 @@ export default function ChatBox({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const sendMessage = (text: string) => {
+  const sendMessage = async (text: string) => {
     if (!peerId) return;
 
     const msg: ChatMessage = {
-      messageId: crypto.randomUUID(),  // Generates a unique ID
+      messageId: crypto.randomUUID(),
       fromUserId: userId,
       toUserId: peerId,
       username,
@@ -89,11 +89,23 @@ export default function ChatBox({
       timestamp: new Date().toISOString(),
     };
 
-    ablyChannel.publish('chat-message', msg).catch((err) => {
-      console.error('Failed to publish message:', err);
-    });
+    try {
+      // Publish realtime message
+      await ablyChannel.publish('chat-message', msg);
 
-    // Removed setMessages here to avoid duplicates
+      // Save message in DB
+      const res = await fetch('/api/messages/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(msg),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to save message');
+      }
+    } catch (err) {
+      console.error('Failed to send or save message:', err);
+    }
   };
 
   if (!peerId) {
