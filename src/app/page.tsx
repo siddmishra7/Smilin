@@ -21,8 +21,6 @@ export default function HomePage() {
 
   const [users, setUsers] = useState<User[]>([]);
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
-  const [, setAblyClient] = useState<Ably.Realtime | null>(null);
-  const [, setPresenceChannel] = useState<Ably.RealtimeChannel | null>(null);
 
   useEffect(() => {
     if (!isLoaded || !user) return;
@@ -43,25 +41,29 @@ export default function HomePage() {
     channel.presence.subscribe((presenceMsg) => {
       setOnlineIds((prev) => {
         const newSet = new Set(prev);
+        const rawUserId = presenceMsg.clientId.split('-')[0];
 
         if (presenceMsg.action === 'enter' || presenceMsg.action === 'update') {
-          const rawUserId = presenceMsg.clientId.split('-')[0];
           newSet.add(rawUserId);
         } else if (presenceMsg.action === 'leave' || presenceMsg.action === 'absent') {
-          const rawUserId = presenceMsg.clientId.split('-')[0];
           newSet.delete(rawUserId);
         }
+
         return newSet;
       });
     });
 
-    setAblyClient(client);
-    setPresenceChannel(channel);
-
     return () => {
       channel.presence.leave().catch(console.error);
       channel.presence.unsubscribe();
-      client.close();
+
+      try {
+        if (client.connection.state !== 'closed') {
+          client.close();
+        }
+      } catch (err) {
+        console.warn('Ably client close failed:', err);
+      }
     };
   }, [isLoaded, user]);
 

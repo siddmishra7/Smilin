@@ -25,8 +25,6 @@ export default function ChatPageClient({ peerId }: { peerId: string }) {
   const { isLoaded, user } = useUser();
   const [peerUser, setPeerUser] = useState<User | null>(null);
   const [ablyChannel, setAblyChannel] = useState<Ably.RealtimeChannel | null>(null);
-
-  // Online users tracked here:
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
   const ABLY_API_KEY = process.env.NEXT_PUBLIC_ABLY_API_KEY || '';
@@ -48,24 +46,20 @@ export default function ChatPageClient({ peerId }: { peerId: string }) {
     const clientId = `${user.id}-${Math.random().toString(36).slice(2, 8)}`;
     const client = getAblyClient(ABLY_API_KEY, clientId);
 
-    // Channel for chat messages between this user and peer
     const channelName = [user.id, peerId].sort().join(':');
     const channel = client.channels.get(channelName);
     setAblyChannel(channel);
 
-    // Presence channel to track who's online (global presence)
     const presenceChannel = client.channels.get('global-presence');
 
     client.connection.once('connected', () => {
-      // Enter presence on the presence channel (mark yourself online)
       presenceChannel.presence.enter({ userId: user.id, timestamp: Date.now() }).catch(console.error);
     });
 
-    // Subscribe to presence updates
     presenceChannel.presence.subscribe((presenceMsg) => {
       setOnlineUserIds((prev) => {
         const updated = new Set(prev);
-        const onlineUserId = presenceMsg.clientId.split('-')[0]; // strip random suffix
+        const onlineUserId = presenceMsg.clientId.split('-')[0];
 
         if (presenceMsg.action === 'enter' || presenceMsg.action === 'update') {
           updated.add(onlineUserId);
@@ -89,11 +83,20 @@ export default function ChatPageClient({ peerId }: { peerId: string }) {
       }
     })();
 
+    // ✅ Cleanup logic
     return () => {
       presenceChannel.presence.leave().catch(console.error);
       presenceChannel.presence.unsubscribe();
       channel.detach();
-      client.close();
+
+      try {
+        if (client.connection.state !== 'closed') {
+          client.close();
+        }
+      } catch (err) {
+        console.warn('Ably client close failed:', err);
+      }
+
       setAblyChannel(null);
       setOnlineUserIds(new Set());
     };
@@ -117,10 +120,7 @@ export default function ChatPageClient({ peerId }: { peerId: string }) {
                 />
                 <div className="flex flex-col">
                   <h1 className="text-lg font-semibold">{peerUser.fullName}</h1>
-                  <p
-                    className={`text-sm ${peerIsOnline ? 'text-green-400' : 'text-gray-500'
-                      } font-medium`}
-                  >
+                  <p className={`text-sm ${peerIsOnline ? 'text-green-400' : 'text-gray-500'} font-medium`}>
                     {peerIsOnline ? 'Online' : 'Offline'}
                   </p>
                 </div>

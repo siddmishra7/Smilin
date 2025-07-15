@@ -76,6 +76,21 @@ export default function ChatBox({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Optional: log channel state changes for debugging
+  useEffect(() => {
+    if (!ablyChannel) return;
+
+    const onStateChange = (stateChange: any) => {
+      console.log('Ably channel state changed:', stateChange.current);
+    };
+
+    ablyChannel.on(onStateChange);
+
+    return () => {
+      ablyChannel.off(onStateChange);
+    };
+  }, [ablyChannel]);
+
   const sendMessage = async (text: string) => {
     if (!peerId) return;
 
@@ -90,10 +105,15 @@ export default function ChatBox({
     };
 
     try {
+      // Ensure channel is attached before publishing
+      if (ablyChannel.state !== 'attached') {
+        await ablyChannel.attach();
+      }
+
       // Publish realtime message
       await ablyChannel.publish('chat-message', msg);
 
-      // Save message in DB
+      // Save message to DB
       const res = await fetch('/api/messages/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -140,11 +160,10 @@ export default function ChatBox({
                   />
                 )}
                 <div
-                  className={`max-w-[80%] p-3 rounded-lg break-words ${
-                    isOwn
+                  className={`max-w-[80%] p-3 rounded-lg break-words ${isOwn
                       ? 'bg-purple-600 text-white font-semibold rounded-br-none'
                       : 'bg-gray-700 text-white font-semibold rounded-bl-none'
-                  }`}
+                    }`}
                 >
                   <div>{text}</div>
                   <div className="text-xs text-gray-300 mt-1 text-right">

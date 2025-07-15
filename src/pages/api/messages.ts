@@ -1,11 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import prisma from '../../app/lib/prisma'; 
+import prisma from '../../app/lib/prisma';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { userId, peerId } = req.query;
 
   if (!userId || !peerId || typeof userId !== 'string' || typeof peerId !== 'string') {
-    return res.status(400).json({ error: 'Missing userId or peerId' });
+    return res.status(400).json({ error: 'Missing or invalid userId or peerId' });
   }
 
   try {
@@ -20,7 +20,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         timestamp: 'asc',
       },
     });
-
 
     return res.status(200).json(messages);
   } catch (error) {

@@ -19,7 +19,7 @@ export default function MessageInput({ onSend }: { onSend: (msg: string) => void
       <input
         type="text"
         placeholder='send message..'
-        className="flex-1 border-2 outline-none px-2 py-3 bg-purple-600 rounded-lg"
+        className="flex-1 border-2 outline-none px-2 py-3 bg-black rounded-lg"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
