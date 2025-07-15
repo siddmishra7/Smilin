@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import type { RealtimeChannel, Message, ChannelStateChange } from 'ably';
+import type { RealtimeChannel, Message } from 'ably';
 import MessageInput from './MessageInput';
 
 type ChatMessage = {
