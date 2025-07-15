@@ -37,10 +37,24 @@ export default function ChatBox({
     const fetchMessages = async () => {
       try {
         const res = await fetch(`/api/messages?userId=${userId}&peerId=${peerId}`);
-        const data: ChatMessage[] = await res.json();
-        setMessages(data);
+        if (!res.ok) {
+          const text = await res.text();
+          console.error('Failed to fetch messages:', text);
+          setMessages([]);
+          return;
+        }
+        const data = await res.json();
+
+        if (Array.isArray(data)) {
+          setMessages(data);
+          console.log('Fetched messages:', data);
+        } else {
+          console.error('Messages data is not an array:', data);
+          setMessages([]);
+        }
       } catch (err) {
         console.error('Failed to fetch messages:', err);
+        setMessages([]);
       }
     };
 
@@ -77,20 +91,19 @@ export default function ChatBox({
   }, [messages]);
 
   // Optional: log channel state changes for debugging
-useEffect(() => {
-  if (!ablyChannel) return;
+  useEffect(() => {
+    if (!ablyChannel) return;
 
-  const onUpdate = () => {
-    console.log('Channel state updated:', ablyChannel.state);
-  };
+    const onUpdate = () => {
+      console.log('Channel state updated:', ablyChannel.state);
+    };
 
-  ablyChannel.on('update', onUpdate);
+    ablyChannel.on('update', onUpdate);
 
-  return () => {
-    ablyChannel.off('update', onUpdate);
-  };
-}, [ablyChannel]);
-
+    return () => {
+      ablyChannel.off('update', onUpdate);
+    };
+  }, [ablyChannel]);
 
   const sendMessage = async (text: string) => {
     if (!peerId) return;
@@ -122,7 +135,8 @@ useEffect(() => {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to save message');
+        const text = await res.text();
+        throw new Error(`Failed to save message: ${text}`);
       }
     } catch (err) {
       console.error('Failed to send or save message:', err);
@@ -140,11 +154,7 @@ useEffect(() => {
   return (
     <div className="flex flex-col grow">
       <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center grow text-gray-400 italic">
-            Hey {username}, send something to start a chat!
-          </div>
-        ) : (
+        {Array.isArray(messages) && messages.length > 0 ? (
           messages.map(({ fromUserId, username: name, avatarUrl: avatar, text, timestamp }, i) => {
             const isOwn = fromUserId === userId;
             return (
@@ -161,10 +171,11 @@ useEffect(() => {
                   />
                 )}
                 <div
-                  className={`max-w-[80%] p-3 rounded-lg break-words ${isOwn
+                  className={`max-w-[80%] p-3 rounded-lg break-words ${
+                    isOwn
                       ? 'bg-purple-600 text-white font-semibold rounded-br-none'
                       : 'bg-gray-700 text-white font-semibold rounded-bl-none'
-                    }`}
+                  }`}
                 >
                   <div>{text}</div>
                   <div className="text-xs text-gray-300 mt-1 text-right">
@@ -184,6 +195,10 @@ useEffect(() => {
               </div>
             );
           })
+        ) : (
+          <div className="flex items-center justify-center grow text-gray-400 italic">
+            Hey {username}, send something to start a chat!
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
