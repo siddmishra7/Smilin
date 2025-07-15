@@ -24,8 +24,8 @@ export default function MessageInput({ onSend }: { onSend: (msg: string) => void
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
       />
-      <button className="bg-black rounded-full border-2  text-white px-3 py-1" onClick={handleSend}>
-        <Send size={20} strokeWidth={2} />
+      <button className="bg-black rounded-full border-2  text-white px-3 py-1 cursor-pointer" onClick={handleSend} >
+        <Send strokeWidth={2} className='size-5 hover:text-purple-500'/>
       </button>
     </div>
   );
