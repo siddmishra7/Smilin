@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { formatDistanceToNowStrict } from 'date-fns';
-import type { RealtimeChannel, Message } from 'ably';
+import type { RealtimeChannel, Message, ChannelStateChange } from 'ably';
 import MessageInput from './MessageInput';
 
 type ChatMessage = {
@@ -77,19 +77,20 @@ export default function ChatBox({
   }, [messages]);
 
   // Optional: log channel state changes for debugging
-  useEffect(() => {
-    if (!ablyChannel) return;
+useEffect(() => {
+  if (!ablyChannel) return;
 
-    const onStateChange = (stateChange: any) => {
-      console.log('Ably channel state changed:', stateChange.current);
-    };
+  const onUpdate = () => {
+    console.log('Channel state updated:', ablyChannel.state);
+  };
 
-    ablyChannel.on(onStateChange);
+  ablyChannel.on('update', onUpdate);
 
-    return () => {
-      ablyChannel.off(onStateChange);
-    };
-  }, [ablyChannel]);
+  return () => {
+    ablyChannel.off('update', onUpdate);
+  };
+}, [ablyChannel]);
+
 
   const sendMessage = async (text: string) => {
     if (!peerId) return;
