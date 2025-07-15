@@ -89,13 +89,7 @@ export default function ChatPageClient({ peerId }: { peerId: string }) {
       presenceChannel.presence.unsubscribe();
       channel.detach();
 
-      try {
-        if (client.connection.state !== 'closed') {
-          client.close();
-        }
-      } catch (err) {
-        console.warn('Ably client close failed:', err);
-      }
+      
 
       setAblyChannel(null);
       setOnlineUserIds(new Set());

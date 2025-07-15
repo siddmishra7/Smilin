@@ -57,13 +57,7 @@ export default function HomePage() {
       channel.presence.leave().catch(console.error);
       channel.presence.unsubscribe();
 
-      try {
-        if (client.connection.state !== 'closed') {
-          client.close();
-        }
-      } catch (err) {
-        console.warn('Ably client close failed:', err);
-      }
+      
     };
   }, [isLoaded, user]);
 
