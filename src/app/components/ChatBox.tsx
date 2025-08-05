@@ -26,7 +26,6 @@ export default function ChatBox({
   avatarUrl,
   peerId,
   ablyChannel,
-  peerStatus,
 }: {
   userId: string;
   username: string;
