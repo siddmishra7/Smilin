@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useUser, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Ably from 'ably';
+import type { RealtimeChannel } from 'ably';
 
 type User = {
   id: string;
@@ -20,10 +21,13 @@ export default function HomePage() {
   const router = useRouter();
 
   const [users, setUsers] = useState<User[]>([]);
-  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set<string>());
+  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
+
+  const ablyClientRef = useRef<Ably.Realtime | null>(null);
 
   useEffect(() => {
-    if (!isLoaded || !user) return;
+    if (!isLoaded || !user || users.length === 0) return;
 
     const clientId = getUniqueClientId(user.id);
     const client = new Ably.Realtime({
@@ -31,94 +35,166 @@ export default function HomePage() {
       clientId,
     });
 
-    const channelName = 'global-presence';
-    const channel = client.channels.get(channelName);
+    ablyClientRef.current = client;
 
-    client.connection.once('connected', () => {
-      channel.presence.enter('online').catch(console.error);
-    });
+    const presenceChannel = client.channels.get('global-presence');
+    const channelMap: Record<string, RealtimeChannel> = {};
 
-    channel.presence.subscribe((presenceMsg) => {
-      setOnlineIds((prev) => {
-        const newSet = new Set(prev);
-        const rawUserId = presenceMsg.clientId.split('-')[0];
+    const handleMessage = (msg: Ably.Message) => {
+      const senderId = msg.data?.fromUserId;
+      if (!senderId || senderId === user.id) return;
+      if (!users.find((u) => u.id === senderId)) return;
 
-        if (presenceMsg.action === 'enter' || presenceMsg.action === 'update') {
-          newSet.add(rawUserId);
-        } else if (presenceMsg.action === 'leave' || presenceMsg.action === 'absent') {
-          newSet.delete(rawUserId);
-        }
+      setMessageCounts((prev) => ({
+        ...prev,
+        [senderId]: (prev[senderId] || 0) + 1,
+      }));
+    };
 
-        return newSet;
-      });
-    });
+    let isMounted = true;
+
+    async function setupChannels() {
+      try {
+        await presenceChannel.attach();
+
+        await presenceChannel.presence.enter('online');
+
+        presenceChannel.presence.subscribe((presenceMsg: Ably.PresenceMessage) => {
+          if (!isMounted) return;
+
+          setOnlineIds((prevSet) => {
+            const newSet = new Set(prevSet);
+            const rawUserId = presenceMsg.clientId.split('-')[0];
+
+            if (['enter', 'update'].includes(presenceMsg.action)) {
+              newSet.add(rawUserId);
+            } else if (['leave', 'absent'].includes(presenceMsg.action)) {
+              newSet.delete(rawUserId);
+            }
+
+            return newSet;
+          });
+        });
+
+        // Subscribe to each user's personal channel
+        users.forEach((u) => {
+          const channelName = [user!.id, u.id].sort().join(':');
+          const channel = client.channels.get(channelName);
+          channel.subscribe('chat-message', handleMessage);
+          channelMap[channelName] = channel;
+        });
+      } catch (err) {
+        console.error('Error setting up presence channel:', err);
+      }
+    }
+
+    setupChannels();
 
     return () => {
-      channel.presence.leave().catch(console.error);
-      channel.presence.unsubscribe();
+      isMounted = false;
 
-      
+      if (presenceChannel.state === 'attached') {
+        presenceChannel.presence.leave().catch(console.error);
+      }
+
+      presenceChannel.presence.unsubscribe();
+
+      Object.values(channelMap).forEach((channel) => {
+        channel.unsubscribe('chat-message', handleMessage);
+      });
+
+      if (
+        client.connection.state !== 'closed' &&
+        client.connection.state !== 'closing'
+      ) {
+        try {
+          client.close();
+        } catch (err) {
+          console.warn('Ably client close error:', err);
+        }
+      }
     };
-  }, [isLoaded, user]);
+  }, [isLoaded, user, users]);
 
   useEffect(() => {
     if (!isLoaded) return;
 
     const fetchUsers = async () => {
-      const res = await fetch('/api/users');
-      const data: User[] = await res.json();
-      if (user) {
-        setUsers(data.filter((u) => u.id !== user.id));
-      } else {
-        setUsers(data);
+      try {
+        const res = await fetch('/api/users');
+        const data: User[] = await res.json();
+        if (user) {
+          setUsers(data.filter((u) => u.id !== user.id));
+        } else {
+          setUsers(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
       }
     };
 
     fetchUsers();
   }, [isLoaded, user]);
 
+  const handleChatOpen = (id: string) => {
+    setMessageCounts((prev) => {
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
+    });
+
+    router.push(`/chat/${id}`);
+  };
+
   if (!isLoaded) {
     return <div className="text-center p-10 text-white">Loading...</div>;
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#3a0ca3] via-[#7209b7] to-[#f72585] p-6 text-white">
-      <div className="max-w-4xl mx-auto">
+    <main className="min-h-screen bg-gradient-to-br from-[#1e1e2f] via-[#2b2d42] to-[#1e1e2f] text-white">
+      <div className="max-w-6xl mx-auto px-4 py-6">
         <SignedIn>
-          <header className="flex items-center justify-between mb-8">
-            <h1 className="text-4xl font-extrabold tracking-tight">Smilin</h1>
+          <header className="flex items-center justify-between mb-10">
+            <h1 className="text-4xl font-bold tracking-tight text-white drop-shadow-sm">Smilin</h1>
             <UserButton />
           </header>
 
+          <h2 className="text-xl font-semibold mb-4 text-white/90">Available Users</h2>
+
           {users.length === 0 ? (
-            <p className="text-white/80 italic">No other users are available right now.</p>
+            <p className="text-white/70 italic">No other users are online at the moment.</p>
           ) : (
-            <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
+            <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {users.map((u) => {
                 const isOnline = onlineIds.has(u.id);
+                const unreadCount = messageCounts[u.id] || 0;
+
                 return (
                   <div
                     key={u.id}
-                    onClick={() => router.push(`/chat/${u.id}`)}
-                    className="cursor-pointer bg-white/10 hover:bg-white/20 transition-all duration-200 p-5 rounded-xl flex flex-col items-center text-center group"
+                    onClick={() => handleChatOpen(u.id)}
+                    className="group cursor-pointer bg-[#2a2c4b] hover:bg-[#3a3c6b] transition-all duration-200 p-5 rounded-xl shadow-md hover:shadow-xl flex flex-col items-center text-center relative"
                   >
                     <div className="relative">
                       <img
                         src={u.imageUrl || '/default-avatar.png'}
                         alt={u.fullName}
-                        className="w-16 h-16 rounded-full object-cover border-4 border-white/30 group-hover:scale-105 transition"
+                        className="w-16 h-16 rounded-full object-cover border-2 border-white/20 group-hover:scale-105 transition"
                       />
                       <span
-                        className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-black ${
-                          isOnline ? 'bg-green-400' : 'bg-gray-500'
-                        }`}
+                        className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#2a2c4b] ${isOnline ? 'bg-green-400' : 'bg-gray-500'
+                          }`}
                       ></span>
+
+                      {unreadCount > 0 && (
+                        <div className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow">
+                          {unreadCount}
+                        </div>
+                      )}
                     </div>
                     <div className="mt-3">
-                      <div className="font-semibold text-lg">{u.fullName}</div>
-                      <div className="text-sm text-white/70">
-                        {isOnline ? 'Online' : 'Offline'}
-                      </div>
+                      <p className="font-semibold text-lg">{u.fullName}</p>
+                      <p className="text-sm text-white/60">{isOnline ? 'Online' : 'Offline'}</p>
                     </div>
                   </div>
                 );
@@ -128,10 +204,10 @@ export default function HomePage() {
         </SignedIn>
 
         <SignedOut>
-          <div className="text-center mt-12">
-            <p className="mb-4 text-lg">You must be signed in to start chatting.</p>
+          <div className="text-center mt-16">
+            <p className="text-lg mb-4">Sign in to start chatting with others.</p>
             <SignInButton mode="modal">
-              <button className="px-6 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition font-semibold text-white">
+              <button className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-md transition text-white font-medium">
                 Sign In
               </button>
             </SignInButton>

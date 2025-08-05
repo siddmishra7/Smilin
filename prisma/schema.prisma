@@ -17,3 +17,14 @@ model ChatMessage {
   text        String
   timestamp   DateTime @default(now())
 }
+
+model UnreadMessageCount {
+  id          Int      @id @default(autoincrement())
+  userId      String   // The user who has unread messages (receiver)
+  fromUserId  String   // The sender whose messages are unread
+  count       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, fromUserId])  // unique per user-sender pair
+}
+
