@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useUser, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Ably from 'ably';
+import { FiSearch } from 'react-icons/fi'; // <- Install if needed: `npm i react-icons`
 import type { RealtimeChannel } from 'ably';
 
 type User = {
@@ -21,101 +22,37 @@ export default function HomePage() {
   const router = useRouter();
 
   const [users, setUsers] = useState<User[]>([]);
-  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set<string>());
-  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
+  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
   const ablyClientRef = useRef<Ably.Realtime | null>(null);
 
+  const searchRef = useRef<HTMLDivElement | null>(null);
+
+  // Close search input when clicking outside
   useEffect(() => {
-    if (!isLoaded || !user || users.length === 0) return;
-
-    const clientId = getUniqueClientId(user.id);
-    const client = new Ably.Realtime({
-      key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
-      clientId,
-    });
-
-    ablyClientRef.current = client;
-
-    const presenceChannel = client.channels.get('global-presence');
-    const channelMap: Record<string, RealtimeChannel> = {};
-
-    const handleMessage = (msg: Ably.Message) => {
-      const senderId = msg.data?.fromUserId;
-      if (!senderId || senderId === user.id) return;
-      if (!users.find((u) => u.id === senderId)) return;
-
-      setMessageCounts((prev) => ({
-        ...prev,
-        [senderId]: (prev[senderId] || 0) + 1,
-      }));
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setIsSearchOpen(false);
+      }
     };
 
-    let isMounted = true;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsSearchOpen(false);
+    };
 
-    async function setupChannels() {
-      try {
-        await presenceChannel.attach();
-
-        await presenceChannel.presence.enter('online');
-
-        presenceChannel.presence.subscribe((presenceMsg: Ably.PresenceMessage) => {
-          if (!isMounted) return;
-
-          setOnlineIds((prevSet) => {
-            const newSet = new Set(prevSet);
-            const rawUserId = presenceMsg.clientId.split('-')[0];
-
-            if (['enter', 'update'].includes(presenceMsg.action)) {
-              newSet.add(rawUserId);
-            } else if (['leave', 'absent'].includes(presenceMsg.action)) {
-              newSet.delete(rawUserId);
-            }
-
-            return newSet;
-          });
-        });
-
-        // Subscribe to each user's personal channel
-        users.forEach((u) => {
-          const channelName = [user!.id, u.id].sort().join(':');
-          const channel = client.channels.get(channelName);
-          channel.subscribe('chat-message', handleMessage);
-          channelMap[channelName] = channel;
-        });
-      } catch (err) {
-        console.error('Error setting up presence channel:', err);
-      }
-    }
-
-    setupChannels();
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
 
     return () => {
-      isMounted = false;
-
-      if (presenceChannel.state === 'attached') {
-        presenceChannel.presence.leave().catch(console.error);
-      }
-
-      presenceChannel.presence.unsubscribe();
-
-      Object.values(channelMap).forEach((channel) => {
-        channel.unsubscribe('chat-message', handleMessage);
-      });
-
-      if (
-        client.connection.state !== 'closed' &&
-        client.connection.state !== 'closing'
-      ) {
-        try {
-          client.close();
-        } catch (err) {
-          console.warn('Ably client close error:', err);
-        }
-      }
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
     };
-  }, [isLoaded, user, users]);
+  }, []);
 
+  // Fetch users
   useEffect(() => {
     if (!isLoaded) return;
 
@@ -136,6 +73,88 @@ export default function HomePage() {
     fetchUsers();
   }, [isLoaded, user]);
 
+  // Ably Presence & Message Count Setup
+  useEffect(() => {
+    if (!isLoaded || !user || users.length === 0) return;
+
+    const clientId = getUniqueClientId(user.id);
+    const client = new Ably.Realtime({
+      key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
+      clientId,
+    });
+
+    ablyClientRef.current = client;
+
+    const presenceChannel = client.channels.get('global-presence');
+    const channelMap: Record<string, RealtimeChannel> = {};
+
+    const handleMessage = (msg: Ably.Message) => {
+      const senderId = msg.data?.fromUserId;
+      if (!senderId || senderId === user.id) return;
+
+      setMessageCounts((prev) => ({
+        ...prev,
+        [senderId]: (prev[senderId] || 0) + 1,
+      }));
+    };
+
+    let isMounted = true;
+
+    async function setupChannels() {
+      try {
+        await presenceChannel.attach();
+        await presenceChannel.presence.enter('online');
+
+        presenceChannel.presence.subscribe((presenceMsg: Ably.PresenceMessage) => {
+          if (!isMounted) return;
+
+          setOnlineIds((prevSet) => {
+            const newSet = new Set(prevSet);
+            const rawUserId = presenceMsg.clientId.split('-')[0];
+
+            if (['enter', 'update'].includes(presenceMsg.action)) {
+              newSet.add(rawUserId);
+            } else if (['leave', 'absent'].includes(presenceMsg.action)) {
+              newSet.delete(rawUserId);
+            }
+
+            return newSet;
+          });
+        });
+
+        // Subscribe to each user's chat channel
+        users.forEach((u) => {
+          const channelName = [user!.id, u.id].sort().join(':');
+          const channel = client.channels.get(channelName);
+          channel.subscribe('chat-message', handleMessage);
+          channelMap[channelName] = channel;
+        });
+      } catch (err) {
+        console.error('Error setting up Ably:', err);
+      }
+    }
+
+    setupChannels();
+
+    return () => {
+      isMounted = false;
+
+      if (presenceChannel.state === 'attached') {
+        presenceChannel.presence.leave().catch(console.error);
+      }
+
+      presenceChannel.presence.unsubscribe();
+
+      Object.values(channelMap).forEach((channel) => {
+        channel.unsubscribe('chat-message', handleMessage);
+      });
+
+      if (client.connection.state !== 'closed' && client.connection.state !== 'closing') {
+        client.close();
+      }
+    };
+  }, [isLoaded, user, users]);
+
   const handleChatOpen = (id: string) => {
     setMessageCounts((prev) => {
       const updated = { ...prev };
@@ -146,6 +165,10 @@ export default function HomePage() {
     router.push(`/chat/${id}`);
   };
 
+  const filteredUsers = users.filter((u) =>
+    u.fullName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   if (!isLoaded) {
     return <div className="text-center p-10 text-white">Loading...</div>;
   }
@@ -155,17 +178,38 @@ export default function HomePage() {
       <div className="max-w-6xl mx-auto px-4 py-6">
         <SignedIn>
           <header className="flex items-center justify-between mb-10">
-            <h1 className="text-4xl font-bold tracking-tight text-white drop-shadow-sm">Smilin</h1>
-            <UserButton />
+            <h1 className="text-4xl font-bold tracking-tight drop-shadow-sm">Smilin</h1>
+            <div className="flex items-center gap-4">
+              <div ref={searchRef} className="relative transition-all duration-300 ease-in-out">
+                <button
+                  onClick={() => setIsSearchOpen((prev) => !prev)}
+                  className="text-white text-xl p-2 rounded-full hover:bg-white/10 transition cursor-pointer"
+                >
+                  <FiSearch />
+                </button>
+
+                <input
+                  type="text"
+                  placeholder="Search users..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className={`absolute right-0 top-full mt-2 w-64 bg-[#2a2c4b] text-white px-4 py-2 rounded-md border border-gray-600 transition-all duration-300 ease-in-out shadow-md ${
+                    isSearchOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+                  }`}
+                />
+              </div>
+
+              <UserButton />
+            </div>
           </header>
 
           <h2 className="text-xl font-semibold mb-4 text-white/90">Available Users</h2>
 
-          {users.length === 0 ? (
-            <p className="text-white/70 italic">No other users are online at the moment.</p>
+          {filteredUsers.length === 0 ? (
+            <p className="text-white/70 italic">No users found.</p>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {users.map((u) => {
+              {filteredUsers.map((u) => {
                 const isOnline = onlineIds.has(u.id);
                 const unreadCount = messageCounts[u.id] || 0;
 
@@ -182,8 +226,9 @@ export default function HomePage() {
                         className="w-16 h-16 rounded-full object-cover border-2 border-white/20 group-hover:scale-105 transition"
                       />
                       <span
-                        className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#2a2c4b] ${isOnline ? 'bg-green-400' : 'bg-gray-500'
-                          }`}
+                        className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#2a2c4b] ${
+                          isOnline ? 'bg-green-400' : 'bg-gray-500'
+                        }`}
                       ></span>
 
                       {unreadCount > 0 && (
