@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { SignedIn, SignedOut, UserButton, SignInButton } from '@clerk/nextjs';
 import Link from 'next/link';
 
 export default function Header() {
@@ -11,7 +10,6 @@ export default function Header() {
     <>
       <header className="w-full backdrop-blur-lg bg-white/5 border-b border-white/10 shadow-md sticky top-0 z-50 rounded-full">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          {/* Logo / App Name */}
           <Link
             href="/"
             className="text-2xl font-extrabold bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent tracking-tight hover:brightness-200 transition duration-300 ease-in-out"
@@ -22,15 +20,14 @@ export default function Header() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsModalOpen(true)}
-              className="px-4 py-2 text-sm font-medium bg-white/10 hover:bg-white/20 text-white rounded-lg transition shadow"
+              className="px-4 py-2 text-sm font-medium bg-white/10 hover:bg-white/20 text-white rounded-lg transition shadow cursor-pointer"
             >
-              Get Help
+              How to?
             </button>
           </div>
         </div>
       </header>
 
-      {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white/80 text-black p-6 rounded-lg w-full max-w-md shadow-lg relative">
