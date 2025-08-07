@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useUser, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs';
+import { useUser, SignedIn, UserButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Ably from 'ably';
-import { FiSearch } from 'react-icons/fi'; // <- Install if needed: `npm i react-icons`
+import { FiSearch } from 'react-icons/fi';
 import type { RealtimeChannel } from 'ably';
+import SignInPrompt from './components/Home';
 
 type User = {
   id: string;
@@ -25,7 +26,7 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
+  const [onlineMap, setOnlineMap] = useState<Map<string, Set<string>>>(new Map());
   const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
   const ablyClientRef = useRef<Ably.Realtime | null>(null);
 
@@ -108,17 +109,26 @@ export default function HomePage() {
         presenceChannel.presence.subscribe((presenceMsg: Ably.PresenceMessage) => {
           if (!isMounted) return;
 
-          setOnlineIds((prevSet) => {
-            const newSet = new Set(prevSet);
-            const rawUserId = presenceMsg.clientId.split('-')[0];
+          const fullClientId = presenceMsg.clientId;
+          const userId = fullClientId.split('-')[0];
+
+          setOnlineMap((prevMap) => {
+            const newMap = new Map(prevMap);
+            const clientSet = newMap.get(userId) || new Set();
 
             if (['enter', 'update'].includes(presenceMsg.action)) {
-              newSet.add(rawUserId);
+              clientSet.add(fullClientId);
+              newMap.set(userId, clientSet);
             } else if (['leave', 'absent'].includes(presenceMsg.action)) {
-              newSet.delete(rawUserId);
+              clientSet.delete(fullClientId);
+              if (clientSet.size === 0) {
+                newMap.delete(userId);
+              } else {
+                newMap.set(userId, clientSet);
+              }
             }
 
-            return newSet;
+            return newMap;
           });
         });
 
@@ -174,7 +184,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#1e1e2f] via-[#2b2d42] to-[#1e1e2f] text-white">
+    <main className="min-h-screen bg-gradient-to-br from-[#1e1e2f] via-[#48005ec4] to-[#1e1e2f] text-white">
       <div className="max-w-6xl mx-auto px-4 py-6">
         <SignedIn>
           <header className="flex items-center justify-between mb-10">
@@ -210,14 +220,14 @@ export default function HomePage() {
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {filteredUsers.map((u) => {
-                const isOnline = onlineIds.has(u.id);
+                const isOnline = onlineMap.has(u.id);
                 const unreadCount = messageCounts[u.id] || 0;
 
                 return (
                   <div
                     key={u.id}
                     onClick={() => handleChatOpen(u.id)}
-                    className="group cursor-pointer bg-[#2a2c4b] hover:bg-[#3a3c6b] transition-all duration-200 p-5 rounded-xl shadow-md hover:shadow-xl flex flex-col items-center text-center relative"
+                    className="group cursor-pointer bg-white/10 hover:bg-white/5 transition-all duration-200 p-5 rounded-xl shadow-md hover:shadow-xl flex flex-col items-center text-center relative"
                   >
                     <div className="relative">
                       <img
@@ -248,16 +258,7 @@ export default function HomePage() {
           )}
         </SignedIn>
 
-        <SignedOut>
-          <div className="text-center mt-16">
-            <p className="text-lg mb-4">Sign in to start chatting with others.</p>
-            <SignInButton mode="modal">
-              <button className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-md transition text-white font-medium">
-                Sign In
-              </button>
-            </SignInButton>
-          </div>
-        </SignedOut>
+        <SignInPrompt/>
       </div>
     </main>
   );
