@@ -11,6 +11,7 @@ import SignInPrompt from './components/Home';
 type User = {
   id: string;
   fullName: string;
+  username: string;
   imageUrl: string;
 };
 
@@ -32,7 +33,6 @@ export default function HomePage() {
 
   const searchRef = useRef<HTMLDivElement | null>(null);
 
-  // Close search input when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
@@ -53,7 +53,7 @@ export default function HomePage() {
     };
   }, []);
 
-  // Fetch users
+
   useEffect(() => {
     if (!isLoaded) return;
 
@@ -74,7 +74,6 @@ export default function HomePage() {
     fetchUsers();
   }, [isLoaded, user]);
 
-  // Ably Presence & Message Count Setup
   useEffect(() => {
     if (!isLoaded || !user || users.length === 0) return;
 
@@ -132,7 +131,6 @@ export default function HomePage() {
           });
         });
 
-        // Subscribe to each user's chat channel
         users.forEach((u) => {
           const channelName = [user!.id, u.id].sort().join(':');
           const channel = client.channels.get(channelName);
@@ -159,25 +157,37 @@ export default function HomePage() {
         channel.unsubscribe('chat-message', handleMessage);
       });
 
-      if (client.connection.state !== 'closed' && client.connection.state !== 'closing') {
-        client.close();
-      }
+      try {
+  if (
+    client.connection.state !== 'closed' &&
+    client.connection.state !== 'closing'
+  ) {
+    client.close();
+  }
+} catch (error) {
+  console.warn('[Ably Cleanup] Error closing connection:', error);
+}
     };
   }, [isLoaded, user, users]);
 
-  const handleChatOpen = (id: string) => {
+  const handleChatOpen = (username: string) => {
     setMessageCounts((prev) => {
       const updated = { ...prev };
-      delete updated[id];
+      delete updated[username];
       return updated;
     });
 
-    router.push(`/chat/${id}`);
+    router.push(`/chat/${username}`);
   };
 
-  const filteredUsers = users.filter((u) =>
-    u.fullName.toLowerCase().includes(searchTerm.toLowerCase())
+
+const filteredUsers = users.filter((u) => {
+  const term = searchTerm.toLowerCase();
+  return (
+    u.fullName.toLowerCase().includes(term) ||
+    u.username.toLowerCase().includes(term)
   );
+});
 
   if (!isLoaded) {
     return <div className="text-center p-10 text-white">Loading...</div>;
@@ -203,9 +213,8 @@ export default function HomePage() {
                   placeholder="Search users..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className={`absolute right-0 top-full mt-2 w-64 bg-[#2a2c4b] text-white px-4 py-2 rounded-md border border-gray-600 transition-all duration-300 ease-in-out shadow-md ${
-                    isSearchOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
-                  }`}
+                  className={`absolute right-0 top-full mt-2 w-64 bg-[#2a2c4b] text-white px-4 py-2 rounded-md border border-gray-600 transition-all duration-300 ease-in-out shadow-md ${isSearchOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+                    }`}
                 />
               </div>
 
@@ -226,7 +235,7 @@ export default function HomePage() {
                 return (
                   <div
                     key={u.id}
-                    onClick={() => handleChatOpen(u.id)}
+                    onClick={() => handleChatOpen(u.username)}
                     className="group cursor-pointer bg-white/10 hover:bg-white/5 transition-all duration-200 p-5 rounded-xl shadow-md hover:shadow-xl flex flex-col items-center text-center relative"
                   >
                     <div className="relative">
@@ -236,9 +245,8 @@ export default function HomePage() {
                         className="w-16 h-16 rounded-full object-cover border-2 border-white/20 group-hover:scale-105 transition"
                       />
                       <span
-                        className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#2a2c4b] ${
-                          isOnline ? 'bg-green-400' : 'bg-gray-500'
-                        }`}
+                        className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#2a2c4b] ${isOnline ? 'bg-green-400' : 'bg-gray-500'
+                          }`}
                       ></span>
 
                       {unreadCount > 0 && (
@@ -249,6 +257,7 @@ export default function HomePage() {
                     </div>
                     <div className="mt-3">
                       <p className="font-semibold text-lg">{u.fullName}</p>
+                      <p className="text-xs">@{u.username}</p>
                       <p className="text-sm text-white/60">{isOnline ? 'Online' : 'Offline'}</p>
                     </div>
                   </div>
@@ -258,7 +267,7 @@ export default function HomePage() {
           )}
         </SignedIn>
 
-        <SignInPrompt/>
+        <SignInPrompt />
       </div>
     </main>
   );

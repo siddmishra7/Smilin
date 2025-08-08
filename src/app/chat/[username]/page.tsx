@@ -4,8 +4,8 @@ import ChatPageClient from '../ChatPageClient';
 export default function Page({
   params,
 }: {
-  params: Promise<{ userId: string }>;
+  params: Promise<{ username: string }>;
 }) {
   const resolvedParams = React.use(params);
-  return <ChatPageClient peerId={resolvedParams.userId} />;
+  return <ChatPageClient peerUsername={resolvedParams.username} />;
 }

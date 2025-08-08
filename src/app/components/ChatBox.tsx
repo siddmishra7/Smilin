@@ -186,7 +186,7 @@ export default function ChatBox({
           const isOwn = fromUserId === userId;
           return (
             <div
-              key={messageId}
+              key={messageId || `${fromUserId}-${timestamp}`}
               className={`flex items-end gap-3 ${isOwn ? 'justify-end' : 'justify-start'}`}
             >
               {!isOwn && (

@@ -15,6 +15,7 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
     const filteredUsers = users.map(u => ({
       id: u.id,
       fullName: u.fullName || 'Unknown',
+      username: u.username,
       imageUrl: u.imageUrl,
     }));
 
