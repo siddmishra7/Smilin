@@ -18,6 +18,16 @@ type User = {
   imageUrl: string;
 };
 
+type AblyConnectionState =
+  | 'initialized'
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'suspended'
+  | 'closing'
+  | 'closed'
+  | 'failed';
+
 function getAblyClient(apiKey: string, clientId: string) {
   return new Ably.Realtime({ key: apiKey, clientId });
 }
@@ -64,7 +74,7 @@ export default function ChatPageClient({ peerUsername }: { peerUsername: string 
   }, [user, peerUser]);
 
 
-  const [channelAttached, setChannelAttached] = useState(false);
+  const [, setChannelAttached] = useState(false);
 
   useEffect(() => {
     if (!ablyChannel) return;
@@ -94,7 +104,7 @@ export default function ChatPageClient({ peerUsername }: { peerUsername: string 
 
 
 
-  const [isChannelReady, setIsChannelReady] = useState(false);
+  const [, setIsChannelReady] = useState(false);
   const detachTimeout = useRef<NodeJS.Timeout | null>(null);
 
 
@@ -277,21 +287,23 @@ export default function ChatPageClient({ peerUsername }: { peerUsername: string 
           if (presenceChannel.state === 'attached') await presenceChannel.detach();
           if (client.connection.state !== 'closed' && client.connection.state !== 'closing') {
            try {
-  if (
-    (client.connection.state as any) !== 'closing' &&
-  (client.connection.state as any) !== 'closed'
-  ) {
-    try {
-      client.close();
-    } catch (e: any) {
-      if (
-        e.message !== 'Connection closed' &&
-        e.message !== 'Cannot call close() on a closed connection'
-      ) {
-        console.warn('[Ably Cleanup] Unexpected error while closing client:', e);
-      }
+            
+const state = client.connection.state as AblyConnectionState;
+
+if (state !== 'closing' && state !== 'closed') {
+  try {
+    client.close();
+  } catch (e) {
+    if (
+      e instanceof Error &&
+      e.message !== 'Connection closed' &&
+      e.message !== 'Cannot call close() on a closed connection'
+    ) {
+      console.warn('[Ably Cleanup] Unexpected error while closing client:', e);
     }
   }
+}
+
 } catch (outerError) {
   console.warn('[Ably Cleanup] Failed to clean up client:', outerError);
 }
